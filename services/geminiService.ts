@@ -1,27 +1,35 @@
-
-import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
+/// <reference types="vite/client" />
+/* Updated: Jan 2026 - Stable Version */
+import { 
+  GoogleGenerativeAI, 
+  SchemaType as Type, 
+} from "@google/generative-ai";
 import { GeminiResponse } from "../types";
 
+const API_KEY = import.meta.env.VITE_GEMINI_API_KEY as string;
+const genAI = new GoogleGenerativeAI(API_KEY);
+
 export const extractAndTranslate = async (
-  base64Image: string, 
-  mimeType: string, 
+  base64Image: string,
+  mimeType: string,
   targetLanguage: string = 'English'
 ): Promise<GeminiResponse> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
+  
   const systemInstruction = `
     Act as a professional bilingual interpreter and cultural guide. 
     Extract all text found in the provided image.
-    For each distinct text element, provide:
-    1. verbatim transcription in its original language.
-    2. a natural, idiomatic translation into ${targetLanguage}.
-    3. 'context': Cultural nuances, slang, or intent explanations.
-    4. 'allergens': If the item is food-related, explicitly list any identified or potential allergens (peanuts, dairy, soy, gluten, etc.). If none or not food, leave as an empty string.
+    Provide the response in JSON format.
   `;
 
-  const response: GenerateContentResponse = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
-    contents: {
+  // Standard stable model for 2026
+  const model = genAI.getGenerativeModel({
+    model: "gemini-2.0-flash", 
+    systemInstruction,
+  });
+
+  const result = await model.generateContent({
+    contents: [{
+      role: 'user',
       parts: [
         {
           inlineData: {
@@ -29,11 +37,10 @@ export const extractAndTranslate = async (
             data: base64Image,
           },
         },
-        { text: "Analyze this image. Extract text, translate it, provide cultural context, and identify allergens." },
+        { text: `Extract text, translate to ${targetLanguage}, provide cultural context, and identify allergens.` },
       ],
-    },
-    config: {
-      systemInstruction,
+    }],
+    generationConfig: {
       responseMimeType: "application/json",
       responseSchema: {
         type: Type.OBJECT,
@@ -43,30 +50,28 @@ export const extractAndTranslate = async (
             items: {
               type: Type.OBJECT,
               properties: {
-                originalText: { type: Type.STRING, description: "Verbatim transcription" },
-                translatedText: { type: Type.STRING, description: "Translation into target language" },
-                context: { type: Type.STRING, description: "Cultural context and intent" },
-                allergens: { type: Type.STRING, description: "Allergen warnings if applicable" },
+                originalText: { type: Type.STRING },
+                translatedText: { type: Type.STRING },
+                context: { type: Type.STRING },
+                allergens: { type: Type.STRING },
               },
               required: ["originalText", "translatedText", "context", "allergens"],
             },
           },
         },
         required: ["items"],
-      },
-    },
+      }
+    }
   });
 
-  const text = response.text;
-  if (!text) {
-    throw new Error("No text received from Gemini API");
-  }
+  const response = await result.response;
+  const text = response.text();
 
   try {
     return JSON.parse(text) as GeminiResponse;
   } catch (e) {
-    console.error("Failed to parse Gemini response as JSON:", text);
-    throw new Error("Received malformed data from AI. Please try a clearer photo.");
+    console.error("JSON Parse Error:", text);
+    throw new Error("Received malformed data. Please try again.");
   }
 };
 
@@ -75,65 +80,26 @@ export const translateAudio = async (
   mimeType: string,
   targetLanguage: string = 'English'
 ): Promise<GeminiResponse> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
-  const systemInstruction = `
-    Act as a professional bilingual interpreter for a traveler. 
-    Listen to this audio.
-    Provide:
-    1. verbatim transcription.
-    2. idiomatic translation into ${targetLanguage}.
-    3. 'context': Tone, slang, or cultural nuances.
-    4. 'allergens': If food items are mentioned, list any allergens discussed.
-  `;
-
-  const response: GenerateContentResponse = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
-    contents: {
-      parts: [
-        {
-          inlineData: {
-            mimeType,
-            data: base64Audio,
-          },
-        },
-        { text: "Listen to this audio and provide the translation, context, and any mentioned allergens." },
-      ],
-    },
-    config: {
-      systemInstruction,
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          items: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                originalText: { type: Type.STRING, description: "Verbatim transcription" },
-                translatedText: { type: Type.STRING, description: "Translation into target language" },
-                context: { type: Type.STRING, description: "Cultural Insight" },
-                allergens: { type: Type.STRING, description: "Mentioned allergen info" },
-              },
-              required: ["originalText", "translatedText", "context", "allergens"],
-            },
-          },
-        },
-        required: ["items"],
-      },
-    },
+  const model = genAI.getGenerativeModel({
+    model: "gemini-2.0-flash", 
   });
 
-  const text = response.text;
-  if (!text) {
-    throw new Error("No translation received from Gemini API");
-  }
+  const result = await model.generateContent([
+    {
+      inlineData: {
+        mimeType,
+        data: base64Audio,
+      },
+    },
+    { text: `Translate this audio into ${targetLanguage}. Provide JSON with originalText, translatedText, context, and allergens.` },
+  ]);
+
+  const response = await result.response;
+  const text = response.text();
 
   try {
     return JSON.parse(text) as GeminiResponse;
   } catch (e) {
-    console.error("Failed to parse Gemini response as JSON:", text);
-    throw new Error("Failed to interpret audio. Please speak more clearly or try again.");
+    throw new Error("Failed to interpret audio.");
   }
 };
