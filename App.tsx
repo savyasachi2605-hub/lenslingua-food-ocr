@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { AppStatus, ExtractedItem, SUPPORTED_LANGUAGES, HistoryItem } from './types';
-import { extractAndTranslate, translateAudio } from './services/geminiService';
+import { extractAndTranslate, translateAudio } from './services/aiService';
 import { databaseService } from './services/databaseService';
 
 // --- Constants ---
