@@ -1,117 +1,80 @@
 /// <reference types="vite/client" />
 import { GeminiResponse } from "../types";
 
-// This check helps us catch errors early
 const API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY;
-
-if (!API_KEY) {
-  alert("CRITICAL ERROR: API Key is undefined. Check your .env file and Redeploy!");
-}
-
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
-const MODEL_ID = "google/gemini-2.0-flash-exp:free";
-export const extractAndTranslate = async (
-  base64Image: string,
-  mimeType: string,
-  targetLanguage: string = 'English'
-): Promise<GeminiResponse> => {
-  
-  // 1. Safety check
-  if (!API_KEY || API_KEY === "undefined") {
-    throw new Error("API Key is missing. Check your .env file and redeploy.");
-  }
+const MODEL_ID = "google/gemini-2.0-flash-001:free"; 
 
-  const prompt = `Act as a professional bilingual interpreter. 
-  Extract all text from this image and translate it into ${targetLanguage}. 
-  Provide cultural context and allergen info.
-  RETURN ONLY A JSON OBJECT: { "items": [{ "originalText": "...", "translatedText": "...", "context": "...", "allergens": "..." }] }`;
+const commonHeaders = {
+  "Authorization": `Bearer ${API_KEY}`,
+  "Content-Type": "application/json",
+  "HTTP-Referer": "https://savyasachi2605-hub.github.io/lenslingua-food-ocr/",
+  "X-Title": "LensLingua Interpreter"
+};
 
-  const response = await fetch(OPENROUTER_URL, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${API_KEY}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": "https://savyasachi2605-hub.github.io/lenslingua-food-ocr/",
-      "X-Title": "LensLingua Interpreter"
-    },
-    body: JSON.stringify({
-      model: MODEL_ID,
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: prompt },
-            {
-              type: "image_url",
-              image_url: { url: `data:${mimeType};base64,${base64Image}` }
-            }
-          ]
-        }
-      ],
-      // This forces the AI to answer in JSON format
-      response_format: { type: "json_object" }
-    })
-  });
-
-  const data = await response.json();
-
-  if (!response.ok) {
-    console.error("OpenRouter Error Details:", data);
-    throw new Error(data.error?.message || "AI Service Error");
-  }
-
-  let content = data.choices[0].message.content;
-  content = content.replace(/```json/g, '').replace(/```/g, '').trim();
-
+const parseAIResponse = (content: string): GeminiResponse => {
   try {
-    return JSON.parse(content) as GeminiResponse;
+    let cleanContent = content.replace(/```json/g, '').replace(/```/g, '').trim();
+    const start = cleanContent.indexOf('{');
+    const end = cleanContent.lastIndexOf('}');
+    if (start !== -1 && end !== -1) cleanContent = cleanContent.substring(start, end + 1);
+    return JSON.parse(cleanContent) as GeminiResponse;
   } catch (e) {
-    throw new Error("AI returned invalid JSON. Please try again.");
+    throw new Error("AI returned invalid data format.");
   }
 };
 
-/**
- * Audio Translation
- */
-export const translateAudio = async (
-  base64Audio: string,
-  mimeType: string,
-  targetLanguage: string = 'English'
-): Promise<GeminiResponse> => {
-  if (!API_KEY) throw new Error("API Key missing");
+export const extractAndTranslate = async (base64Image: string, mimeType: string, targetLanguage: string): Promise<GeminiResponse> => {
+  const prompt = `Act as a professional interpreter. Extract text from this image and translate to ${targetLanguage}. Provide JSON with originalText, translatedText, context, and allergens.`;
+  const response = await fetch(OPENROUTER_URL, {
+    method: "POST",
+    headers: commonHeaders,
+    body: JSON.stringify({
+      model: MODEL_ID,
+      messages: [{
+        role: "user",
+        content: [
+          { type: "text", text: prompt },
+          { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64Image}` } }
+        ]
+      }],
+      response_format: { type: "json_object" }
+    })
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error?.message || "Vision Error");
+  return parseAIResponse(data.choices[0].message.content);
+};
 
-  const prompt = `Translate this audio into ${targetLanguage}. Return JSON with 'items' array.`;
+export const translateAudio = async (base64Audio: string, mimeType: string, targetLanguage: string): Promise<GeminiResponse> => {
+  // FIX: Extract the actual format (e.g., 'webm', 'mp4', 'wav') from the mimeType
+  const audioFormat = mimeType.split('/')[1].split(';')[0]; 
+
+  const prompt = `Act as a professional interpreter. Listen to this audio and translate it into ${targetLanguage}. Return a JSON object with an 'items' array.`;
 
   const response = await fetch(OPENROUTER_URL, {
     method: "POST",
-    headers: {
-      "Authorization": `Bearer ${API_KEY}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": "https://savyasachi2605-hub.github.io/lenslingua-food-ocr/",
-      "X-Title": "LensLingua"
-    },
+    headers: commonHeaders,
     body: JSON.stringify({
       model: MODEL_ID,
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: prompt },
-            {
-              type: "input_audio",
-              input_audio: { data: base64Audio, format: "wav" }
+      messages: [{
+        role: "user",
+        content: [
+          { type: "text", text: prompt },
+          {
+            type: "input_audio",
+            input_audio: { 
+              data: base64Audio, 
+              format: audioFormat // Now correctly tells the AI it is 'webm' or 'mp4'
             }
-          ]
-        }
-      ],
+          }
+        ]
+      }],
       response_format: { type: "json_object" }
     })
   });
 
   const data = await response.json();
-  if (!response.ok) throw new Error(data.error?.message || "Audio translation failed");
-
-  let content = data.choices[0].message.content;
-  content = content.replace(/```json/g, '').replace(/```/g, '').trim();
-  return JSON.parse(content) as GeminiResponse;
+  if (!response.ok) throw new Error(data.error?.message || "Audio Error");
+  return parseAIResponse(data.choices[0].message.content);
 };
