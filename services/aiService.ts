@@ -3,7 +3,7 @@ import { GeminiResponse } from "../types";
 
 const API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY;
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
-const MODEL_ID = "google/gemini-2.0-flash-001:free"; 
+const MODEL_ID = "google/gemini-flash-1.5:free"; 
 
 const commonHeaders = {
   "Authorization": `Bearer ${API_KEY}`,
