@@ -1,10 +1,9 @@
 /// <reference types="vite/client" />
 import { GeminiResponse } from "../types";
 
-// Ensure this matches your .env.local variable name
 const API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY;
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
-const MODEL_ID = "google/gemma-3-2b-it:free"; 
+const MODEL_ID = "google/gemma-3n-e2b-it:free"; 
 
 export const extractAndTranslate = async (
   base64Image: string,
@@ -12,52 +11,55 @@ export const extractAndTranslate = async (
   targetLanguage: string = 'English'
 ): Promise<GeminiResponse> => {
   
-  const prompt = `Act as a professional bilingual interpreter. 
-  Extract text from this image and translate it to ${targetLanguage}. 
-  Provide cultural context and allergen info.
-  IMPORTANT: Return ONLY raw JSON in this format: 
-  { "items": [{ "originalText": "...", "translatedText": "...", "context": "...", "allergens": "..." }] }`;
-
-  const response = await fetch(OPENROUTER_URL, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${API_KEY}`,
-      "HTTP-Referer": window.location.origin, 
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      model: MODEL_ID,
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: prompt },
-            {
-              type: "image_url",
-              image_url: { url: `data:${mimeType};base64,${base64Image}` }
-            }
-          ]
-        }
-      ]
-    })
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.error?.message || "OpenRouter Error");
+  // Debug: Check if key exists (Check your browser console)
+  if (!API_KEY) {
+    console.error("CRITICAL: API Key is missing from environment!");
+    throw new Error("API Key configuration error. Check .env file.");
   }
 
-  const data = await response.json();
-  let content = data.choices[0].message.content;
-
-  // Clean markdown if the model provides it
-  content = content.replace(/```json/g, '').replace(/```/g, '').trim();
+  const prompt = `Return a JSON object with an 'items' array. Extract and translate the text from this image into ${targetLanguage}. 
+  Format: { "items": [{ "originalText": "...", "translatedText": "...", "context": "...", "allergens": "..." }] }`;
 
   try {
+    const response = await fetch(OPENROUTER_URL, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${API_KEY}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://savyasachi2605-hub.github.io/lenslingua-food-ocr/",
+        "X-Title": "LensLingua"
+      },
+      body: JSON.stringify({
+        model: MODEL_ID,
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: prompt },
+              {
+                type: "image_url",
+                image_url: { url: `data:${mimeType};base64,${base64Image}` }
+              }
+            ]
+          }
+        ]
+      })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.log("OpenRouter Detailed Error:", data); // Check console for this!
+      throw new Error(data.error?.message || "User not found");
+    }
+
+    let content = data.choices[0].message.content;
+    content = content.replace(/```json/g, '').replace(/```/g, '').trim();
+
     return JSON.parse(content) as GeminiResponse;
-  } catch (e) {
-    console.error("Parse Error. Content was:", content);
-    throw new Error("AI response format error. Try again.");
+  } catch (error: any) {
+    console.error("Extraction Service Error:", error);
+    throw error;
   }
 };
 
@@ -66,37 +68,6 @@ export const translateAudio = async (
   mimeType: string,
   targetLanguage: string = 'English'
 ): Promise<GeminiResponse> => {
-  // Note: If Gemma 3 2B Free doesn't support audio yet, this may return an error.
-  const prompt = `Translate this audio into ${targetLanguage}. Return JSON with 'items' array.`;
-
-  const response = await fetch(OPENROUTER_URL, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${API_KEY}`,
-      "HTTP-Referer": window.location.origin,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      model: MODEL_ID,
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: prompt },
-            {
-              type: "input_audio",
-              input_audio: { data: base64Audio, format: "wav" } 
-            }
-          ]
-        }
-      ]
-    })
-  });
-
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error?.message || "Audio failed");
-
-  let content = data.choices[0].message.content;
-  content = content.replace(/```json/g, '').replace(/```/g, '').trim();
-  return JSON.parse(content) as GeminiResponse;
+    // Audio implementation using fetch... (similar structure as above)
+    throw new Error("Audio not implemented in this debug version");
 };
